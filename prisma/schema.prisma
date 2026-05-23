@@ -1,8 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client"
   output   = "../src/generated/prisma"
@@ -12,7 +7,42 @@ datasource db {
   provider = "postgresql"
 }
 
-// Order status enum
+model Order {
+  id             String        @id @default(cuid())
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  address        String
+  country        String        @default("Australia")
+  deliveryFee    Float
+  email          String
+  firstName      String
+  lastName       String
+  orderNumber    Int           @unique @default(autoincrement())
+  paymentMethod  PaymentMethod
+  paypalOrderId  String?       @unique
+  phone          String
+  postcode       String
+  state          String
+  stripeIntentId String?       @unique
+  subtotal       Float
+  suburb         String
+  total          Float
+  userId         String?
+  items          OrderItem[]
+}
+
+model OrderItem {
+  id          String @id @default(cuid())
+  orderId     String
+  productName String
+  color       String
+  variant     String
+  quantity    Int
+  price       Float
+  size        String
+  order       Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
 enum OrderStatus {
   PENDING
   PAID
@@ -21,55 +51,7 @@ enum OrderStatus {
   REFUNDED
 }
 
-
-
 enum PaymentMethod {
   STRIPE
   PAYPAL
-}
-
-model Order {
-  id              String        @id @default(cuid())
-  orderNumber     Int           @unique @default(autoincrement())
-  userId          String?       // Optional: If you want to link to a User model in the future
-  
-  // Shipping Details (From your UI)
-  email           String
-  firstName       String
-  lastName        String
-  address         String
-  suburb          String
-  state           String
-  postcode        String
-  phone           String
-  country         String        @default("Australia")
-
-  // Totals
-  subtotal        Float
-  deliveryFee     Float
-  total           Float
-
-  // Payment Tracking
-  paymentMethod   PaymentMethod
-  stripeIntentId  String?       @unique // For Stripe
-  paypalOrderId   String?       @unique // For PayPal
-  
-  // Relations
-  items           OrderItem[]
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-}
-
-// 3. The specific items in the order
-model OrderItem {
-  id          String   @id @default(cuid())
-  orderId     String
-  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  
-  productName String   // e.g. "Rugged Collar & Leash Bundle"
-  color       String   // e.g. "Blue"
-  variant     String  // e.g. "Size: XXS, Leash: 180cm"
-  quantity    Int
-  price       Float    // Price at the time of purchase
-  size        String
 }
