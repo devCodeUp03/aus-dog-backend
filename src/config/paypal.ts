@@ -1,8 +1,24 @@
-// Example using a simple fetch-based config for PayPal
-export const paypalConfig = {
-  clientId: process.env.PAYPAL_CLIENT_ID,
-  clientSecret: process.env.PAYPAL_CLIENT_SECRET,
-  baseUrl: process.env.NODE_ENV === 'production' 
-    ? 'https://api-m.paypal.com' 
-    : 'https://api-m.sandbox.paypal.com',
+const PAYPAL_BASE_URL = process.env.PAYPAL_BASE_URL || "https://api-m.sandbox.paypal.com";
+
+// Gets a Bearer token from PayPal
+export const getPayPalAccessToken = async (): Promise<string> => {
+  const clientId = process.env.PAYPAL_CLIENT_ID!;
+  const secret = process.env.PAYPAL_CLIENT_SECRET!;
+
+  const credentials = Buffer.from(`${clientId}:${secret}`).toString("base64");
+
+  const res = await fetch(`${PAYPAL_BASE_URL}/v1/oauth2/token`, {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${credentials}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: "grant_type=client_credentials",
+  });
+
+  const data = await res.json();
+  if (!data.access_token) throw new Error("Failed to get PayPal access token");
+  return data.access_token;
 };
+
+export { PAYPAL_BASE_URL };

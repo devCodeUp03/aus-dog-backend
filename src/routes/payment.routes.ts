@@ -1,10 +1,12 @@
 import express from 'express';
-import { placeOrderStripe } from '../controllers/stripe.controller.js';
-import { verifyStripe } from '../controllers/stripe.controller.js';
+import { placeOrderStripe, verifyStripe } from '../controllers/stripe.controller.js';
+import { placeOrderPaypal, verifyPaypal } from '../controllers/paypal.controller.js'; // ADD
 
 const router = express.Router();
 
-// Route to handle Stripe payment and order placement
 router.post('/stripe', placeOrderStripe);
-router.post("/verify-stripe", verifyStripe);
+router.post('/verify-stripe', verifyStripe);
+router.post('/paypal', placeOrderPaypal);           // ADD
+router.post('/verify-paypal', verifyPaypal);        // ADD
+
 export default router;
