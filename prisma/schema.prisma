@@ -7,6 +7,13 @@ datasource db {
   provider = "postgresql"
 }
 
+model AdminUser {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+}
+
 model Order {
   id             String        @id @default(cuid())
   createdAt      DateTime      @default(now())
@@ -28,6 +35,7 @@ model Order {
   suburb         String
   total          Float
   userId         String?
+  status         OrderStatus   @default(PENDING)
   items          OrderItem[]
 }
 
@@ -45,10 +53,8 @@ model OrderItem {
 
 enum OrderStatus {
   PENDING
-  PAID
-  SHIPPED
-  CANCELLED
-  REFUNDED
+  SHIPPING
+  COMPLETED
 }
 
 enum PaymentMethod {

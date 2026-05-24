@@ -1,8 +1,7 @@
 import { prisma } from "../config/prisma.js";
 import { stripe } from "../config/stripe.js";
 import { Request, Response } from "express";
-
-
+import { sendOrderConfirmationEmail } from "../services/email.service.js";
 
 const placeOrderStripe = async (req: Request, res: Response) => {
   try {
@@ -51,6 +50,7 @@ const placeOrderStripe = async (req: Request, res: Response) => {
           })),
         },
       },
+      include: { items: true },
     });
 
     // 2. Prepare line items for Stripe
@@ -93,19 +93,39 @@ const placeOrderStripe = async (req: Request, res: Response) => {
 
 
 const verifyStripe = async (req: Request, res: Response) => {
-  const { orderId, success } = req.body; // userId is removed
-
+  const { orderId, success } = req.body;
+ 
   try {
     if (success === "true" || success === true) {
-      // Payment was successful. No `status` field on Order model anymore,
-      // so just return success. Frontend should handle cart clearing.
+      // Fetch the full order to build the confirmation email
+      const order = await prisma.order.findUnique({
+        where:   { id: orderId },
+        include: { items: true },
+      });
+ 
+      if (order) {
+        // Fire confirmation email (non-blocking)
+        sendOrderConfirmationEmail({
+          email:         order.email,
+          firstName:     order.firstName,
+          lastName:      order.lastName,
+          orderNumber:   order.orderNumber,
+          items:         order.items,
+          subtotal:      order.subtotal,
+          deliveryFee:   order.deliveryFee,
+          total:         order.total,
+          address:       order.address,
+          suburb:        order.suburb,
+          state:         order.state,
+          postcode:      order.postcode,
+          country:       order.country,
+          paymentMethod: order.paymentMethod,
+        }).catch((err) => console.error("Stripe confirmation email error:", err));
+      }
+ 
       res.json({ success: true, message: "Payment successful." });
     } else {
-      // 2. If user cancelled or payment failed, remove the pending order
-      await prisma.order.delete({
-        where: { id: orderId },
-      });
-
+      await prisma.order.delete({ where: { id: orderId } });
       res.json({ success: false, message: "Payment failed. Pending order cleared." });
     }
   } catch (error) {
@@ -114,7 +134,5 @@ const verifyStripe = async (req: Request, res: Response) => {
     res.status(500).json({ success: false, message });
   }
 };
-
-
-
+ 
 export { placeOrderStripe, verifyStripe };

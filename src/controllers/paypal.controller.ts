@@ -1,6 +1,8 @@
 import { prisma } from "../config/prisma.js";
 import { Request, Response } from "express";
 import { getPayPalAccessToken, PAYPAL_BASE_URL } from "../config/paypal.js";
+import { sendOrderConfirmationEmail } from "../services/email.service.js";
+
 
 // ─── STEP 1: Create PayPal order + DB record ────────────────────────────────
 export const placeOrderPaypal = async (req: Request, res: Response) => {
@@ -165,6 +167,30 @@ export const verifyPaypal = async (req: Request, res: Response) => {
 
       if (!captureRes.ok || captureData.status !== "COMPLETED") {
         throw new Error("PayPal capture failed: " + JSON.stringify(captureData));
+      }
+
+      const order = await prisma.order.findUnique({
+        where:   { id: orderId },
+        include: { items: true },
+      });
+
+       if (order) {
+        sendOrderConfirmationEmail({
+          email:         order.email,
+          firstName:     order.firstName,
+          lastName:      order.lastName,
+          orderNumber:   order.orderNumber,
+          items:         order.items,
+          subtotal:      order.subtotal,
+          deliveryFee:   order.deliveryFee,
+          total:         order.total,
+          address:       order.address,
+          suburb:        order.suburb,
+          state:         order.state,
+          postcode:      order.postcode,
+          country:       order.country,
+          paymentMethod: order.paymentMethod,
+        }).catch((err) => console.error("PayPal confirmation email error:", err));
       }
 
       res.json({ success: true, message: "PayPal payment captured successfully." });
