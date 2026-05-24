@@ -106,7 +106,7 @@ export const getAllOrders = async (req: Request, res: Response) => {
 
 // ─── PATCH /api/admin/orders/:id/status ──────────────────────────────────────
 export const updateOrderStatus = async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const id = String(req.params.id);
   const { status } = req.body;
  
   const VALID_STATUSES = ["PENDING", "SHIPPING", "COMPLETED"];
