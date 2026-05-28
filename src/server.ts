@@ -3,15 +3,27 @@ import paymentRoutes from "./routes/payment.routes.js";
 import adminRoutes from "./routes/admin.routes.js";
 import contactRoutes from "./routes/contact.routes.js";
 import cors from "cors";
+import webhookRoutes from "./routes/webhook.routes.js";
 
 const app = express();
 const PORT = process.env.PORT || 5001;
 
-app.use(cors())
 app.use(cors({
-  origin: process.env.FRONTEND_URL || "http://localhost:3000",
+  origin: (origin, callback) => {
+    const allowed = [
+      "http://localhost:3000",
+      "https://topdogworkingdog.com",   // no trailing slash
+    ];
+    if (!origin || allowed.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
   credentials: true,
 }));
+
+app.use("/api/webhook", webhookRoutes)
 
 app.use(express.json()); // ← MUST be before all routes
 
