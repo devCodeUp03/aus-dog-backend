@@ -11,6 +11,13 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+export type RefundEmailPayload = {
+  email: string;
+  amount: string;
+  currency: string;
+  receiptUrl?: string;
+};
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type OrderEmailPayload = {
   email: string;
@@ -42,6 +49,7 @@ export type StatusEmailPayload = {
   orderNumber: number;
   status: "PENDING" | "SHIPPING" | "COMPLETED";
   total: number;
+  trackingNumber?: string;
 };
 
 // ─── Send Order Confirmation ──────────────────────────────────────────────────
@@ -60,28 +68,41 @@ export const sendOrderConfirmationEmail = async (order: OrderEmailPayload) => {
 export const sendStatusUpdateEmail = async (payload: StatusEmailPayload) => {
   const html = buildStatusUpdateHTML(payload);
   const subjects: Record<string, string> = {
-    PENDING:   `We received your order — #${payload.orderNumber}`,
-    SHIPPING:  `Your order is on its way! — #${payload.orderNumber}`,
+    PENDING: `We received your order — #${payload.orderNumber}`,
+    SHIPPING: `Your order is on its way! — #${payload.orderNumber}`,
     COMPLETED: `Order delivered — #${payload.orderNumber}`,
   };
 
   await transporter.sendMail({
     from: `"${process.env.SHOP_NAME || "Your Shop"}" <${process.env.SMTP_USER}>`,
     to: payload.email,
-    subject: subjects[payload.status] || `Order Update — #${payload.orderNumber}`,
+    subject:
+      subjects[payload.status] || `Order Update — #${payload.orderNumber}`,
+    html,
+  });
+};
+export const sendRefundEmail = async (payload: RefundEmailPayload) => {
+  const html = buildRefundHTML(payload);
+
+  await transporter.sendMail({
+    from: `"${process.env.SHOP_NAME || "Your Shop"}" <${process.env.SMTP_USER}>`,
+    to: payload.email,
+    subject: `Your Refund of ${payload.currency} $${payload.amount} is On Its Way`,
     html,
   });
 };
 
 // ─── HTML: Order Confirmation ─────────────────────────────────────────────────
 function buildOrderConfirmationHTML(order: OrderEmailPayload): string {
-  const shopName  = process.env.SHOP_NAME  || "Your Shop";
+  const shopName = process.env.SHOP_NAME || "Your Shop";
   const shopColor = process.env.SHOP_COLOR || "#ee6d49";
-  const logoUrl   = process.env.SHOP_LOGO_URL || "";
+  const logoUrl = process.env.SHOP_LOGO_URL || "";
 
   const itemRows = order.items
     .map((item) => {
-      const meta = [item.color, item.size, item.variant].filter(Boolean).join(" · ");
+      const meta = [item.color, item.size, item.variant]
+        .filter(Boolean)
+        .join(" · ");
       return `
         <tr>
           <td style="padding:14px 0;border-bottom:1px solid #f0f0f0;">
@@ -196,11 +217,14 @@ function buildOrderConfirmationHTML(order: OrderEmailPayload): string {
 
 // ─── HTML: Status Update ──────────────────────────────────────────────────────
 function buildStatusUpdateHTML(payload: StatusEmailPayload): string {
-  const shopName  = process.env.SHOP_NAME  || "Your Shop";
+  const shopName = process.env.SHOP_NAME || "Your Shop";
   const shopColor = process.env.SHOP_COLOR || "#ee6d49";
-  const logoUrl   = process.env.SHOP_LOGO_URL || "";
+  const logoUrl = process.env.SHOP_LOGO_URL || "";
 
-  const statusMeta: Record<string, { emoji: string; headline: string; body: string; step: number }> = {
+  const statusMeta: Record<
+    string,
+    { emoji: string; headline: string; body: string; step: number }
+  > = {
     PENDING: {
       emoji: "🛍️",
       headline: "We've received your order!",
@@ -210,7 +234,11 @@ function buildStatusUpdateHTML(payload: StatusEmailPayload): string {
     SHIPPING: {
       emoji: "🚚",
       headline: "Your order is on its way!",
-      body: `Great news, ${payload.firstName}! Your order <strong>#${payload.orderNumber}</strong> has been dispatched and is heading your way. Keep an eye out for your delivery.`,
+      body: `Great news, ${payload.firstName}! Your order <strong>#${payload.orderNumber}</strong> has been dispatched and is heading your way.${
+        payload.trackingNumber
+          ? ` Your tracking number is <strong style="font-family:monospace;">${payload.trackingNumber}</strong>. You can track your parcel via <a href="https://auspost.com.au/mypost/track/#/search?referenceId=${payload.trackingNumber}" style="color:${process.env.SHOP_COLOR}">Australia Post tracking</a>.`
+          : ""
+      }`,
       step: 2,
     },
     COMPLETED: {
@@ -226,16 +254,16 @@ function buildStatusUpdateHTML(payload: StatusEmailPayload): string {
   // Progress tracker
   const steps = [
     { label: "Order Placed", icon: "🛍️" },
-    { label: "Shipping",     icon: "🚚" },
-    { label: "Delivered",    icon: "✅" },
+    { label: "Shipping", icon: "🚚" },
+    { label: "Delivered", icon: "✅" },
   ];
 
   const progressCells = steps
     .map((step, i) => {
       const stepNum = i + 1;
-      const active  = stepNum === meta.step;
-      const done    = stepNum < meta.step;
-      const bg   = done || active ? shopColor : "#e5e5e5";
+      const active = stepNum === meta.step;
+      const done = stepNum < meta.step;
+      const bg = done || active ? shopColor : "#e5e5e5";
       const text = done || active ? "#ffffff" : "#aaaaaa";
       const labelColor = active ? shopColor : done ? "#555" : "#aaa";
       const fontWeight = active ? "700" : "400";
@@ -246,7 +274,9 @@ function buildStatusUpdateHTML(payload: StatusEmailPayload): string {
           <div style="font-size:12px;color:${labelColor};font-weight:${fontWeight};letter-spacing:0.3px;">${step.label}</div>
         </td>`;
     })
-    .join(`<td align="center" width="1%" style="padding-bottom:28px;"><div style="height:2px;width:40px;background:#e5e5e5;"></div></td>`);
+    .join(
+      `<td align="center" width="1%" style="padding-bottom:28px;"><div style="height:2px;width:40px;background:#e5e5e5;"></div></td>`,
+    );
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -302,10 +332,14 @@ function buildStatusUpdateHTML(payload: StatusEmailPayload): string {
             <p style="font-size:15px;color:#444;line-height:1.8;margin:0 0 24px;">${meta.body}</p>
 
             <!-- CTA -->
-            ${payload.status === "COMPLETED" ? `
+            ${
+              payload.status === "COMPLETED"
+                ? `
             <div style="text-align:center;margin-top:8px;">
               <a href="mailto:${process.env.SMTP_USER}" style="display:inline-block;background:${shopColor};color:#ffffff;font-size:14px;font-weight:600;padding:14px 32px;border-radius:50px;text-decoration:none;">Contact Support</a>
-            </div>` : ""}
+            </div>`
+                : ""
+            }
 
           </td>
         </tr>
@@ -315,6 +349,98 @@ function buildStatusUpdateHTML(payload: StatusEmailPayload): string {
           <td style="background:#fafafa;border-top:1px solid #efefef;padding:24px 40px;text-align:center;">
             <p style="margin:0;font-size:13px;color:#aaa;">&copy; ${new Date().getFullYear()} ${shopName}. All rights reserved.</p>
             <p style="margin:8px 0 0;font-size:12px;color:#ccc;">You're receiving this because you have an active order with us.</p>
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
+
+function buildRefundHTML(payload: RefundEmailPayload): string {
+  const shopName = process.env.SHOP_NAME || "Your Shop";
+  const shopColor = process.env.SHOP_COLOR || "#ee6d49";
+  const logoUrl = process.env.SHOP_LOGO_URL || "";
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Refund Confirmed</title>
+</head>
+<body style="margin:0;padding:0;background:#f6f6f6;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f6f6f6;padding:40px 0;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+
+        <!-- Header -->
+        <tr>
+          <td style="background:${shopColor};padding:36px 40px;text-align:center;">
+            ${logoUrl ? `<img src="${logoUrl}" alt="${shopName}" style="height:40px;margin-bottom:16px;display:block;margin-left:auto;margin-right:auto;"/>` : ""}
+            <div style="background:rgba(255,255,255,0.2);width:64px;height:64px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;margin-bottom:16px;">
+              <span style="font-size:28px;">↩️</span>
+            </div>
+            <h1 style="margin:0;color:#ffffff;font-size:26px;font-weight:700;letter-spacing:-0.5px;">Refund Confirmed</h1>
+            <p style="margin:10px 0 0;color:rgba(255,255,255,0.85);font-size:15px;">Your refund has been successfully issued.</p>
+          </td>
+        </tr>
+
+        <!-- Body -->
+        <tr>
+          <td style="padding:32px 40px;">
+
+            <!-- Refund amount -->
+            <div style="background:#fafafa;border-radius:12px;padding:20px 24px;margin-bottom:24px;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="color:#888;font-size:12px;text-transform:uppercase;letter-spacing:1px;">Refund Amount</td>
+                  <td style="text-align:right;font-weight:700;font-size:24px;color:${shopColor};">
+                    ${payload.currency} $${payload.amount}
+                  </td>
+                </tr>
+              </table>
+            </div>
+
+            <!-- Message -->
+            <p style="font-size:15px;color:#444;line-height:1.8;margin:0 0 16px;">
+              We have successfully processed your refund. Please allow <strong>5–10 business days</strong> 
+              for the amount to appear on your statement depending on your bank or card provider.
+            </p>
+
+            <!-- Receipt link -->
+            ${
+              payload.receiptUrl
+                ? `
+            <div style="text-align:center;margin:28px 0;">
+              <a href="${payload.receiptUrl}" 
+                 style="display:inline-block;background:${shopColor};color:#ffffff;font-size:14px;font-weight:600;padding:14px 32px;border-radius:50px;text-decoration:none;">
+                View Refund Receipt
+              </a>
+            </div>`
+                : ""
+            }
+
+            <!-- Help note -->
+            <div style="margin-top:24px;background:#fff8f5;border:1px solid ${shopColor}30;border-radius:12px;padding:20px;">
+              <div style="font-size:13px;font-weight:700;color:${shopColor};text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">
+                Need Help?
+              </div>
+              <div style="font-size:14px;color:#555;line-height:1.7;">
+                If you have any questions about your refund, just reply to this email and we'll get back to you as soon as possible.
+              </div>
+            </div>
+
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td style="background:#fafafa;border-top:1px solid #efefef;padding:24px 40px;text-align:center;">
+            <p style="margin:0;font-size:13px;color:#aaa;">&copy; ${new Date().getFullYear()} ${shopName}. All rights reserved.</p>
+            <p style="margin:8px 0 0;font-size:12px;color:#ccc;">This email was sent because a refund was issued on your order.</p>
           </td>
         </tr>
 

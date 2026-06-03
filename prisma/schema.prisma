@@ -37,6 +37,13 @@ model Order {
   userId         String?
   status         OrderStatus   @default(PENDING)
   items          OrderItem[]
+
+  paid            Boolean  @default(false)
+  refunded        Boolean  @default(false)
+  refundId        String?
+  refundReason    String?
+  stripeSessionId String?
+  paypalCaptureId String?
 }
 
 model OrderItem {

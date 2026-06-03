@@ -50,15 +50,15 @@ export const placeOrderPaypal = async (req, res) => {
                     {
                         reference_id: newOrder.id, // ties PayPal order to your DB order
                         amount: {
-                            currency_code: "USD",
+                            currency_code: "AUD",
                             value: (amount + deliveryFee).toFixed(2),
                             breakdown: {
                                 item_total: {
-                                    currency_code: "USD",
+                                    currency_code: "AUD",
                                     value: amount.toFixed(2),
                                 },
                                 shipping: {
-                                    currency_code: "USD",
+                                    currency_code: "AUD",
                                     value: deliveryFee.toFixed(2),
                                 },
                             },
@@ -67,7 +67,7 @@ export const placeOrderPaypal = async (req, res) => {
                             name: item.name,
                             quantity: String(item.quantity),
                             unit_amount: {
-                                currency_code: "USD",
+                                currency_code: "AUD",
                                 value: item.price.toFixed(2),
                             },
                         })),

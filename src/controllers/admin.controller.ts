@@ -107,7 +107,7 @@ export const getAllOrders = async (req: Request, res: Response) => {
 // ─── PATCH /api/admin/orders/:id/status ──────────────────────────────────────
 export const updateOrderStatus = async (req: Request, res: Response) => {
   const id = String(req.params.id);
-  const { status } = req.body;
+  const { status,trackingNumber } = req.body;
  
   const VALID_STATUSES = ["PENDING", "SHIPPING", "COMPLETED"];
   if (!status || !VALID_STATUSES.includes(status)) {
@@ -131,6 +131,7 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
       orderNumber: updated.orderNumber,
       status:      updated.status as "PENDING" | "SHIPPING" | "COMPLETED",
       total:       updated.total,
+      trackingNumber: status === "SHIPPING" ? trackingNumber : undefined,
     }).catch((err) => console.error("Status email error:", err));
  
     res.json({ success: true, order: updated });
