@@ -4,6 +4,7 @@ import adminRoutes from "./routes/admin.routes.js";
 import contactRoutes from "./routes/contact.routes.js";
 import cors from "cors";
 import webhookRoutes from "./routes/webhook.routes.js";
+import inventoryRoutes from "./routes/inventory.routes.js";
 const app = express();
 const PORT = process.env.PORT || 5001;
 app.use(cors({
@@ -26,6 +27,7 @@ app.use(express.json()); // ← MUST be before all routes
 app.use("/api/admin", adminRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/contact", contactRoutes);
+app.use("/api/inventory", inventoryRoutes);
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });

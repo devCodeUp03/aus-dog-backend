@@ -16,7 +16,7 @@ export const getInventory = async (req: Request, res: Response) => {
 
 // PATCH /api/admin/inventory/:productId
 export const updateStock = async (req: Request, res: Response) => {
-  const productId = parseInt(req.params.productId);
+  const productId = parseInt(req.params.productId as string);
   const { stock } = req.body;
 
   if (typeof stock !== "number" || stock < 0) {
