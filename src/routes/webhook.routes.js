@@ -2,7 +2,7 @@
 import express from "express";
 import { stripe } from "../config/stripe.js";
 import { prisma } from "../config/prisma.js";
-import { sendOrderConfirmationEmail } from "../services/email.service.js";
+import { sendOrderConfirmationEmail, sendRefundEmail } from "../services/email.service.js";
 const router = express.Router();
 // ⚠️ Raw body middleware applied at the ROUTE level (not globally)
 router.post("/stripe", express.raw({ type: "application/json" }), async (req, res) => {
@@ -52,6 +52,27 @@ router.post("/stripe", express.raw({ type: "application/json" }), async (req, re
                 console.error("Webhook DB error:", err);
                 return res.status(500).json({ error: "Internal server error" });
             }
+        }
+    }
+    if (event.type === "charge.refunded") {
+        try {
+            const charge = event.data.object;
+            const email = charge.billing_details?.email || charge.receipt_email;
+            const amount = (charge.amount_refunded / 100).toFixed(2);
+            const currency = charge.currency.toUpperCase();
+            const receiptUrl = charge.receipt_url ?? undefined;
+            if (email) {
+                sendRefundEmail({
+                    email,
+                    amount,
+                    currency,
+                    receiptUrl,
+                }).catch((err) => console.error("Refund email error:", err));
+            }
+        }
+        catch (err) {
+            console.error("Refund webhook error:", err);
+            return res.status(500).json({ error: "Internal server error" });
         }
     }
     res.json({ received: true });

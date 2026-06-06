@@ -58,6 +58,13 @@ model OrderItem {
   order       Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }
 
+model Product {
+  id        String   @id @default(cuid())
+  productId Int      @unique 
+  stock     Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
+
 enum OrderStatus {
   PENDING
   SHIPPING
