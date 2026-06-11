@@ -26,7 +26,7 @@ app.use(cors({
 
 app.use("/api/webhook", webhookRoutes)
 
-app.use(express.json()); // ← MUST be before all routes
+app.use(express.json());
 app.use("/api/admin", adminRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/contact", contactRoutes);
