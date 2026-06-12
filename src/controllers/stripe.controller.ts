@@ -2,68 +2,28 @@ import { prisma } from "../config/prisma.js";
 import { stripe } from "../config/stripe.js";
 import { Request, Response } from "express";
 import { sendOrderConfirmationEmail } from "../services/email.service.js";
+import { getPayPalAccessToken } from "../config/paypal.js";
 
 const placeOrderStripe = async (req: Request, res: Response) => {
   try {
     const {
-      userId,
-      items,
-      amount,
-      deliveryFee,
-      email,
-      firstName,
-      lastName,
-      address: addressLine,
-      suburb,
-      state,
-      postcode,
-      phone,
-      country,
+      userId, items, amount, deliveryFee,
+      email, firstName, lastName,
+      address: addressLine, suburb, state, postcode, phone, country,
     } = req.body;
 
     const origin = (req.headers.origin as string) || "";
 
-    // 1. Create the Order and OrderItems in one transaction (Supabase)
-    const newOrder = await prisma.order.create({
-      data: {
-        email,
-        firstName,
-        lastName,
-        address: addressLine,
-        suburb,
-        state,
-        postcode,
-        phone,
-        country: country || "Australia",
-        subtotal: amount,
-        deliveryFee: deliveryFee,
-        total: amount + deliveryFee,
-        paymentMethod: "STRIPE",
-        items: {
-          create: (items || []).map((item: any) => ({
-            productName: item.name,
-            variant: item.variant || "",
-            quantity: item.quantity,
-            price: item.price,
-            color: item.color || "",
-            size: item.size || "",
-          })),
-        },
-      },
-      include: { items: true },
-    });
-
-    // 2. Prepare line items for Stripe
+    // ✅ No DB order created here — only create Stripe session
     const line_items = items.map((item: any) => ({
       price_data: {
-        currency: "aud", // Adjust currency if needed
+        currency: "aud",
         product_data: { name: item.name },
-        unit_amount: Math.round(item.price * 100), // Stripe expects cents
+        unit_amount: Math.round(item.price * 100),
       },
       quantity: item.quantity,
     }));
 
-    // Add delivery fee
     line_items.push({
       price_data: {
         currency: "aud",
@@ -73,16 +33,31 @@ const placeOrderStripe = async (req: Request, res: Response) => {
       quantity: 1,
     });
 
-    // 3. Create Stripe Checkout Session
     const session = await stripe.checkout.sessions.create({
-      success_url: `${origin}/checkout/success?success=true&orderId=${newOrder.id}`,
-      cancel_url: `${origin}/verify?success=false&orderId=${newOrder.id}`,
+      success_url: `${origin}/checkout/success?success=true&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url:  `${origin}/checkout?cancelled=true`,
       line_items,
       mode: "payment",
-      metadata: { orderId: newOrder.id }, // Keep track of ID
+      // ✅ Store everything needed to create the order in the webhook
+      metadata: {
+        customerData: JSON.stringify({
+          userId: userId ? String(userId) : null,
+          email, firstName, lastName,
+          address: addressLine, suburb, state,
+          postcode, phone,
+          country: country || "Australia",
+        }),
+        cartItems:   JSON.stringify(items),
+        amount:      String(amount),
+        deliveryFee: String(deliveryFee),
+      },
     });
 
-    res.json({ success: true, session_url: session.url, items, username: `${firstName} ${lastName}` });
+    res.json({
+      success: true,
+      session_url: session.url,
+      username: `${firstName} ${lastName}`,
+    });
   } catch (error) {
     console.error(error);
     const message = error instanceof Error ? error.message : String(error);
@@ -90,46 +65,19 @@ const placeOrderStripe = async (req: Request, res: Response) => {
   }
 };
 
-
-
+// verifyStripe is no longer needed for order creation — webhook handles it
+// Keep it only if your success page calls it to check status
 const verifyStripe = async (req: Request, res: Response) => {
-  const { orderId, success } = req.body;
- 
+  const { session_id } = req.body;
+
   try {
-    if (success === "true" || success === true) {
-      // Fetch the full order to build the confirmation email
-      const order = await prisma.order.findUnique({
-        where:   { id: orderId },
-        include: { items: true },
-      });
- 
-      if (order) {
-        // Fire confirmation email (non-blocking)
-        sendOrderConfirmationEmail({
-          email:         order.email,
-          firstName:     order.firstName,
-          lastName:      order.lastName,
-          orderNumber:   order.orderNumber,
-          items:         order.items,
-          subtotal:      order.subtotal,
-          deliveryFee:   order.deliveryFee,
-          total:         order.total,
-          address:       order.address,
-          suburb:        order.suburb,
-          state:         order.state,
-          postcode:      order.postcode,
-          country:       order.country,
-          paymentMethod: order.paymentMethod,
-        }).catch((err) => console.error("Stripe confirmation email error:", err));
-      }
- 
-      res.json({ success: true, message: "Payment successful." });
+    const session = await stripe.checkout.sessions.retrieve(session_id);
+    if (session.payment_status === "paid") {
+      res.json({ success: true, message: "Payment confirmed." });
     } else {
-      await prisma.order.delete({ where: { id: orderId } });
-      res.json({ success: false, message: "Payment failed. Pending order cleared." });
+      res.json({ success: false, message: "Payment not completed." });
     }
   } catch (error) {
-    console.error("Verification Error:", error);
     const message = error instanceof Error ? error.message : String(error);
     res.status(500).json({ success: false, message });
   }

@@ -23,6 +23,8 @@ app.use(cors({
   },
   credentials: true,
 }));
+app.set("strict routing", false);
+app.enable("case sensitive routing");
 
 app.use("/api/webhook", webhookRoutes)
 

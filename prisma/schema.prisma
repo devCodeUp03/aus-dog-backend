@@ -42,7 +42,7 @@ model Order {
   refunded        Boolean  @default(false)
   refundId        String?
   refundReason    String?
-  stripeSessionId String?
+  stripeSessionId String?  @unique
   paypalCaptureId String?
 }
 

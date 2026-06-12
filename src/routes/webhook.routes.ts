@@ -25,62 +25,55 @@ router.post(
     res.json({ received: true });
 
     if (event.type === "checkout.session.completed") {
-      const session = event.data.object as any;
-      const orderId = session.metadata?.orderId;
+  const session = event.data.object as any;
+  if (session.payment_status !== "paid") return;
 
-      if (!orderId) {
-        console.error("Webhook: no orderId in metadata");
-        return;
-      }
+  // Check if order already exists (idempotency — Stripe may retry)
+  const existing = await prisma.order.findFirst({
+    where: { stripeSessionId: session.id }
+  });
+  if (existing) return;
 
-      // Only fulfill if payment actually succeeded
-      if (session.payment_status !== "paid") {
-        console.log("Webhook: session not paid, skipping");
-        return;
-      }
+  const customerData = JSON.parse(session.metadata.customerData);
+  const cartItems    = JSON.parse(session.metadata.cartItems);
+  const amount       = parseFloat(session.metadata.amount);
+  const deliveryFee  = parseFloat(session.metadata.deliveryFee);
 
-      try {
-        const order = await prisma.order.findUnique({
-          where: { id: orderId },
-          include: { items: true },
-        });
+  const order = await prisma.order.create({
+    data: {
+      stripeSessionId: session.id,   // add this field to your schema
+      email:        customerData.email,
+      firstName:    customerData.firstName,
+      lastName:     customerData.lastName,
+      address:      customerData.address,
+      suburb:       customerData.suburb,
+      state:        customerData.state,
+      postcode:     customerData.postcode,
+      phone:        customerData.phone,
+      country:      customerData.country,
+      subtotal:     amount,
+      deliveryFee,
+      total:        amount + deliveryFee,
+      paymentMethod: "STRIPE",
+      paid:         true,
+      status:       "PENDING",
+      userId:       customerData.userId,
+      items: {
+        create: cartItems.map((item: any) => ({
+          productName: item.name,
+          variant:     item.variant || "",
+          quantity:    item.quantity,
+          price:       item.price,
+          color:       item.color || "",
+          size:        item.size || "",
+        })),
+      },
+    },
+    include: { items: true },
+  });
 
-        if (!order) {
-          console.error(`Webhook: order ${orderId} not found`);
-          return;
-        }
-
-        if (order.paid) {
-          console.log(`Webhook: order ${orderId} already processed, skipping`);
-          return; // Idempotency — don't double-process on Stripe retries
-        }
-
-        await prisma.order.update({
-          where: { id: orderId },
-          data: { paid: true },
-        });
-
-        sendOrderConfirmationEmail({
-          email:         order.email,
-          firstName:     order.firstName,
-          lastName:      order.lastName,
-          orderNumber:   order.orderNumber,
-          items:         order.items,
-          subtotal:      order.subtotal,
-          deliveryFee:   order.deliveryFee,
-          total:         order.total,
-          address:       order.address,
-          suburb:        order.suburb,
-          state:         order.state,
-          postcode:      order.postcode,
-          country:       order.country,
-          paymentMethod: order.paymentMethod,
-        }).catch((err) => console.error("Webhook confirmation email error:", err));
-
-      } catch (err) {
-        console.error("Webhook DB error (checkout.session.completed):", err);
-      }
-    }
+  sendOrderConfirmationEmail({ ...order }).catch(console.error);
+}
 
     if (event.type === "charge.refunded") {
       try {
