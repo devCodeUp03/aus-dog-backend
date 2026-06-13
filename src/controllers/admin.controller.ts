@@ -94,6 +94,7 @@ export const getAdminMe = async (req: any, res: Response) => {
 export const getAllOrders = async (req: Request, res: Response) => {
   try {
     const orders = await prisma.order.findMany({
+      where: { paid: true }, 
       include: { items: true },
       orderBy: { createdAt: "desc" },
     });
