@@ -6,6 +6,7 @@ import {
   sendOrderConfirmationEmail,
   sendStatusUpdateEmail,
 } from "../services/email.service.js";
+import { AdminRequest } from "../middleware/auth.middleware.js";
 const JWT_SECRET = process.env.JWT_SECRET || "change-me-in-production";
 
 // ─── Seed / Create Superuser ─────────────────────────────────────────────────
@@ -142,5 +143,27 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
     }
     const message = error instanceof Error ? error.message : String(error);
     res.status(500).json({ success: false, message });
+  }
+};
+
+// admin.controller.ts
+export const deleteOrder = async (req: AdminRequest, res: Response) => {
+  const id = String(req.params.id);
+  try {
+    const order = await prisma.order.findUnique({ where: { id } });
+    if (!order) {
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+
+    // Safety: prevent deleting orders currently being shipped
+    if (order.status === "SHIPPING") {
+      return res.status(400).json({ success: false, message: "Cannot delete an order that is being shipped" });
+    }
+
+    await prisma.order.delete({ where: { id } }); // OrderItems cascade automatically
+    res.json({ success: true, message: "Order deleted" });
+  } catch (error) {
+    console.error("Delete order error:", error);
+    res.status(500).json({ success: false, message: "Failed to delete order" });
   }
 };

@@ -5,6 +5,7 @@ import {
   getAdminMe,
   getAllOrders,
   updateOrderStatus,
+  deleteOrder,
 } from "../controllers/admin.controller.js";
 import { requireAdminJWT } from "../middleware/auth.middleware.js";
 import { getInventory, updateStock } from "../controllers/inventory.controller.js";
@@ -23,5 +24,8 @@ router.patch("/inventory/:productId", requireAdminJWT, updateStock);
 router.get("/me", requireAdminJWT, getAdminMe);
 router.get("/orders", requireAdminJWT, getAllOrders);
 router.patch("/orders/:id/status", requireAdminJWT, updateOrderStatus);
+
+// admin.routes.ts
+router.delete("/orders/:id", requireAdminJWT, deleteOrder);
 
 export default router;
