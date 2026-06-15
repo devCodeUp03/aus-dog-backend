@@ -18,7 +18,7 @@ router.post("/login", adminLogin);
 
 //inventory
 router.get("/inventory", requireAdminJWT, getInventory);
-router.patch("/inventory/:productId", requireAdminJWT, updateStock);
+router.patch("/inventory/:productId/:size", requireAdminJWT, updateStock);
 
 // ── Protected (JWT required) ────────────────────────────────────────────────
 router.get("/me", requireAdminJWT, getAdminMe);
