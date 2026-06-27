@@ -21,6 +21,8 @@ const placeOrderStripe = async (req, res) => {
                 deliveryFee: deliveryFee,
                 total: amount + deliveryFee,
                 paymentMethod: "STRIPE",
+                userId: userId ? String(userId) : null,
+                paid: false,
                 items: {
                     create: (items || []).map((item) => ({
                         productName: item.name,
@@ -55,7 +57,7 @@ const placeOrderStripe = async (req, res) => {
         // 3. Create Stripe Checkout Session
         const session = await stripe.checkout.sessions.create({
             success_url: `${origin}/checkout/success?success=true&orderId=${newOrder.id}`,
-            cancel_url: `${origin}/verify?success=false&orderId=${newOrder.id}`,
+            cancel_url: `${origin}/checkout/success?success=false&orderId=${newOrder.id}`,
             line_items,
             mode: "payment",
             metadata: { orderId: newOrder.id }, // Keep track of ID
@@ -70,40 +72,59 @@ const placeOrderStripe = async (req, res) => {
 };
 const verifyStripe = async (req, res) => {
     const { orderId, success } = req.body;
+    if (!orderId) {
+        return res.status(400).json({ success: false, message: "Missing orderId" });
+    }
     try {
         if (success === "true" || success === true) {
-            // Fetch the full order to build the confirmation email
             const order = await prisma.order.findUnique({
                 where: { id: orderId },
                 include: { items: true },
             });
-            if (order) {
-                // Fire confirmation email (non-blocking)
-                sendOrderConfirmationEmail({
-                    email: order.email,
-                    firstName: order.firstName,
-                    lastName: order.lastName,
-                    orderNumber: order.orderNumber,
-                    items: order.items,
-                    subtotal: order.subtotal,
-                    deliveryFee: order.deliveryFee,
-                    total: order.total,
-                    address: order.address,
-                    suburb: order.suburb,
-                    state: order.state,
-                    postcode: order.postcode,
-                    country: order.country,
-                    paymentMethod: order.paymentMethod,
-                }).catch((err) => console.error("Stripe confirmation email error:", err));
+            if (!order) {
+                return res.status(404).json({ success: false, message: "Order not found" });
             }
+            // ✅ Idempotent — if already marked paid (e.g. webhook beat us to it), skip duplicate email
+            if (order.paid) {
+                return res.json({ success: true, message: "Already verified." });
+            }
+            const updated = await prisma.order.update({
+                where: { id: orderId },
+                data: { paid: true },
+                include: { items: true },
+            });
+            sendOrderConfirmationEmail({
+                email: updated.email,
+                firstName: updated.firstName,
+                lastName: updated.lastName,
+                orderNumber: updated.orderNumber,
+                items: updated.items,
+                subtotal: updated.subtotal,
+                deliveryFee: updated.deliveryFee,
+                total: updated.total,
+                address: updated.address,
+                suburb: updated.suburb,
+                state: updated.state,
+                postcode: updated.postcode,
+                country: updated.country,
+                paymentMethod: updated.paymentMethod,
+            }).catch((err) => console.error("Stripe confirmation email error:", err));
             res.json({ success: true, message: "Payment successful." });
         }
         else {
-            await prisma.order.delete({ where: { id: orderId } });
+            // ✅ Cancelled — delete the unpaid ghost order
+            const order = await prisma.order.findUnique({ where: { id: orderId } });
+            if (order && !order.paid) {
+                await prisma.order.delete({ where: { id: orderId } });
+            }
             res.json({ success: false, message: "Payment failed. Pending order cleared." });
         }
     }
     catch (error) {
+        if (error?.code === "P2025") {
+            // Already deleted, fine
+            return res.json({ success: false, message: "Order already cleared." });
+        }
         console.error("Verification Error:", error);
         const message = error instanceof Error ? error.message : String(error);
         res.status(500).json({ success: false, message });

@@ -23,6 +23,7 @@ export const placeOrderPaypal = async (req, res) => {
                 total: amount + deliveryFee,
                 paymentMethod: "PAYPAL",
                 userId: userId ? String(userId) : null,
+                paid: false,
                 items: {
                     create: (items || []).map((item) => ({
                         productName: item.name,
@@ -75,8 +76,8 @@ export const placeOrderPaypal = async (req, res) => {
                 ],
                 application_context: {
                     return_url: `${origin}/checkout/success?paypal=true&orderId=${newOrder.id}`,
-                    cancel_url: `${origin}/checkout?paypal=cancelled&orderId=${newOrder.id}`,
-                    brand_name: "Your Shop Name",
+                    cancel_url: `${origin}/checkout/success?paypal=true&success=false&orderId=${newOrder.id}`,
+                    brand_name: "Top Dog Working Dog",
                     user_action: "PAY_NOW",
                 },
             }),
@@ -94,8 +95,11 @@ export const placeOrderPaypal = async (req, res) => {
         });
         // 5. Find the approval URL to redirect the customer
         const approvalUrl = paypalData.links?.find((link) => link.rel === "approve")?.href;
-        if (!approvalUrl)
+        if (!approvalUrl) {
+            // ✅ Roll back if no approval URL — don't leave ghost order
+            await prisma.order.delete({ where: { id: newOrder.id } });
             throw new Error("No PayPal approval URL returned");
+        }
         res.json({
             success: true,
             session_url: approvalUrl, // same field name as Stripe — frontend stays unchanged
@@ -112,15 +116,15 @@ export const placeOrderPaypal = async (req, res) => {
 // ─── STEP 2: Capture payment after customer approves ────────────────────────
 export const verifyPaypal = async (req, res) => {
     const { orderId, success, token } = req.body;
-    // `token` = PayPal's order token, returned in the return_url as ?token=...
-    // `orderId` = your internal DB order ID
+    if (!orderId) {
+        return res.status(400).json({ success: false, message: "Missing orderId" });
+    }
     try {
         if (success === "true" || success === true) {
             if (!token) {
                 return res.status(400).json({ success: false, message: "Missing PayPal token" });
             }
             const accessToken = await getPayPalAccessToken();
-            // Capture the payment
             const captureRes = await fetch(`${PAYPAL_BASE_URL}/v2/checkout/orders/${token}/capture`, {
                 method: "POST",
                 headers: {
@@ -136,33 +140,48 @@ export const verifyPaypal = async (req, res) => {
                 where: { id: orderId },
                 include: { items: true },
             });
-            if (order) {
-                sendOrderConfirmationEmail({
-                    email: order.email,
-                    firstName: order.firstName,
-                    lastName: order.lastName,
-                    orderNumber: order.orderNumber,
-                    items: order.items,
-                    subtotal: order.subtotal,
-                    deliveryFee: order.deliveryFee,
-                    total: order.total,
-                    address: order.address,
-                    suburb: order.suburb,
-                    state: order.state,
-                    postcode: order.postcode,
-                    country: order.country,
-                    paymentMethod: order.paymentMethod,
-                }).catch((err) => console.error("PayPal confirmation email error:", err));
+            if (!order) {
+                return res.status(404).json({ success: false, message: "Order not found" });
             }
+            if (order.paid) {
+                return res.json({ success: true, message: "Already verified." });
+            }
+            const updated = await prisma.order.update({
+                where: { id: orderId },
+                data: { paid: true },
+                include: { items: true },
+            });
+            sendOrderConfirmationEmail({
+                email: updated.email,
+                firstName: updated.firstName,
+                lastName: updated.lastName,
+                orderNumber: updated.orderNumber,
+                items: updated.items,
+                subtotal: updated.subtotal,
+                deliveryFee: updated.deliveryFee,
+                total: updated.total,
+                address: updated.address,
+                suburb: updated.suburb,
+                state: updated.state,
+                postcode: updated.postcode,
+                country: updated.country,
+                paymentMethod: updated.paymentMethod,
+            }).catch((err) => console.error("PayPal confirmation email error:", err));
             res.json({ success: true, message: "PayPal payment captured successfully." });
         }
         else {
-            // Customer cancelled — delete pending order
-            await prisma.order.delete({ where: { id: orderId } });
+            // ✅ Customer cancelled — delete unpaid ghost order
+            const order = await prisma.order.findUnique({ where: { id: orderId } });
+            if (order && !order.paid) {
+                await prisma.order.delete({ where: { id: orderId } });
+            }
             res.json({ success: false, message: "PayPal payment cancelled. Order cleared." });
         }
     }
     catch (error) {
+        if (error?.code === "P2025") {
+            return res.json({ success: false, message: "Order already cleared." });
+        }
         console.error("PayPal verify error:", error);
         const message = error instanceof Error ? error.message : String(error);
         res.status(500).json({ success: false, message });

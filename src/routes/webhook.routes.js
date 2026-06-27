@@ -16,42 +16,55 @@ router.post("/stripe", express.raw({ type: "application/json" }), async (req, re
         console.error("Webhook signature verification failed:", err);
         return res.status(400).send(`Webhook Error: ${err}`);
     }
+    res.json({ received: true });
     if (event.type === "checkout.session.completed") {
         const session = event.data.object;
         const orderId = session.metadata?.orderId;
-        if (orderId) {
-            try {
-                const order = await prisma.order.findUnique({
-                    where: { id: orderId },
-                    include: { items: true },
-                });
-                if (order) {
-                    await prisma.order.update({
-                        where: { id: orderId },
-                        data: { paid: true },
-                    });
-                    sendOrderConfirmationEmail({
-                        email: order.email,
-                        firstName: order.firstName,
-                        lastName: order.lastName,
-                        orderNumber: order.orderNumber,
-                        items: order.items,
-                        subtotal: order.subtotal,
-                        deliveryFee: order.deliveryFee,
-                        total: order.total,
-                        address: order.address,
-                        suburb: order.suburb,
-                        state: order.state,
-                        postcode: order.postcode,
-                        country: order.country,
-                        paymentMethod: order.paymentMethod,
-                    }).catch((err) => console.error("Webhook email error:", err));
-                }
+        if (!orderId) {
+            console.error("Webhook: no orderId in metadata");
+            return;
+        }
+        // Only fulfill if payment actually succeeded
+        if (session.payment_status !== "paid") {
+            console.log("Webhook: session not paid, skipping");
+            return;
+        }
+        try {
+            const order = await prisma.order.findUnique({
+                where: { id: orderId },
+                include: { items: true },
+            });
+            if (!order) {
+                console.error(`Webhook: order ${orderId} not found`);
+                return;
             }
-            catch (err) {
-                console.error("Webhook DB error:", err);
-                return res.status(500).json({ error: "Internal server error" });
+            if (order.paid) {
+                console.log(`Webhook: order ${orderId} already processed, skipping`);
+                return; // Idempotency — don't double-process on Stripe retries
             }
+            await prisma.order.update({
+                where: { id: orderId },
+                data: { paid: true },
+            });
+            sendOrderConfirmationEmail({
+                email: order.email,
+                firstName: order.firstName,
+                lastName: order.lastName,
+                orderNumber: order.orderNumber,
+                items: order.items,
+                subtotal: order.subtotal,
+                deliveryFee: order.deliveryFee,
+                total: order.total,
+                address: order.address,
+                suburb: order.suburb,
+                state: order.state,
+                postcode: order.postcode,
+                country: order.country,
+                paymentMethod: order.paymentMethod,
+            }).catch((err) => console.error("Webhook confirmation email error:", err));
+        }
+        catch (err) {
+            console.error("Webhook DB error (checkout.session.completed):", err);
         }
     }
     if (event.type === "charge.refunded") {
@@ -61,20 +74,17 @@ router.post("/stripe", express.raw({ type: "application/json" }), async (req, re
             const amount = (charge.amount_refunded / 100).toFixed(2);
             const currency = charge.currency.toUpperCase();
             const receiptUrl = charge.receipt_url ?? undefined;
-            if (email) {
-                sendRefundEmail({
-                    email,
-                    amount,
-                    currency,
-                    receiptUrl,
-                }).catch((err) => console.error("Refund email error:", err));
+            console.log(`Webhook: refund for ${email}, amount ${amount} ${currency}`);
+            if (!email) {
+                console.error("Webhook: no email found on charge for refund");
+                return;
             }
+            await sendRefundEmail({ email, amount, currency, receiptUrl });
+            console.log(`Webhook: refund email sent to ${email}`);
         }
         catch (err) {
             console.error("Refund webhook error:", err);
-            return res.status(500).json({ error: "Internal server error" });
         }
     }
-    res.json({ received: true });
 });
 export default router;
