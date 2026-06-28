@@ -1,12 +1,10 @@
-export const PAYPAL_BASE_URL =
-  process.env.PAYPAL_MODE === "live"
-    ? "https://api-m.paypal.com"         // 🟢 Production
-    : "https://api-m.sandbox.paypal.com"; // 🟡 Sandbox
-
-    //testing
-// export const PAYPAL_BASE_URL = process.env.PAYPAL_MODE === "sandbox"
-//     ? "https://api-m.sandbox.paypal.com" // 🟡 Sandbox
-//     : "https://api-m.paypal.com"; // 🟢 Production
+// export const PAYPAL_BASE_URL =
+//   process.env.PAYPAL_MODE === "live"
+//     ? "https://api-m.paypal.com"         // 🟢 Production
+//     : "https://api-m.sandbox.paypal.com"; // 🟡 Sandbox
+export const PAYPAL_BASE_URL = process.env.PAYPAL_MODE === "sandbox"
+    ? "https://api-m.sandbox.paypal.com" // 🟡 Sandbox
+    : "https://api-m.paypal.com"; // 🟢 Production
 // Gets a Bearer token from PayPal
 export const getPayPalAccessToken = async () => {
     const clientId = process.env.PAYPAL_CLIENT_ID;
