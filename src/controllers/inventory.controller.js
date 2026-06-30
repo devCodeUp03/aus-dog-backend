@@ -2,7 +2,7 @@ import { prisma } from "../config/prisma.js";
 // GET /api/admin/inventory
 export const getInventory = async (req, res) => {
     try {
-        const inventory = await prisma.product.findMany({
+        const inventory = await prisma.productInventory.findMany({
             orderBy: [{ productId: "asc" }, { size: "asc" }]
         });
         res.json({ success: true, inventory });
@@ -24,7 +24,7 @@ export const updateStock = async (req, res) => {
         return res.status(400).json({ success: false, message: "Invalid size" });
     }
     try {
-        const updated = await prisma.product.upsert({
+        const updated = await prisma.productInventory.upsert({
             where: { productId_size: { productId, size } },
             update: { stock },
             create: { productId, size, stock },
@@ -39,7 +39,7 @@ export const updateStock = async (req, res) => {
 // GET /api/inventory (public — for frontend)
 export const getPublicInventory = async (req, res) => {
     try {
-        const inventory = await prisma.product.findMany();
+        const inventory = await prisma.productInventory.findMany();
         res.json({ success: true, inventory });
     }
     catch (error) {

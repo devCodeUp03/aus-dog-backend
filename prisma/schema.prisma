@@ -58,7 +58,7 @@ model OrderItem {
   order       Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }
 
-model Product {
+model ProductInventory {
   id        String   @id @default(cuid())
   productId Int      
   size      String
